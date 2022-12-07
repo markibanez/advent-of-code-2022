@@ -4,142 +4,108 @@ import { EOL } from 'os';
 const input = fs.readFileSync('./input.txt', 'utf8');
 // const input = fs.readFileSync('./sample.txt', 'utf8');
 
-const mfs = [];
-const ffs = [];
+const rootDirectory = { name: '/', children: [], localSize: 0, size: 0 };
+const ffs = [rootDirectory];
 
 const lines = input.split(EOL);
 
-let cd = null;
-for (let i = 0; i < lines.length; ) {
-    const line = lines[i];
+let cd;
+// process console output lines
+lines.forEach((line) => {
+    // change directory pattern is '$ cd <directory>'
+    // directory === '/' means change to root directory
+    // directory === '..' means change to parent directory
+    // directory === 'directory' means change to child directory
 
-    // if line starts with $, it's a command
-    if (line.startsWith('$')) {
-        const command = line.replace('$ ', '').trim();
-        if (command === 'cd /') {
-            let rootDirectory = mfs.find((f) => f.name === '/' && f.type === 'directory');
-            if (!rootDirectory) {
-                rootDirectory = {
-                    name: '/',
-                    type: 'directory',
-                    children: [],
-                    childrenNames: [],
-                };
-                mfs.push(rootDirectory);
-                ffs.push(rootDirectory);
-            }
+    if (line.startsWith('$ cd ')) {
+        const directory = line.slice(5);
+        if (directory === '/') {
             cd = rootDirectory;
-            i++;
-            continue;
-        }
-
-        if (command === 'cd ..') {
-            if (cd.name === '/') {
-                i++;
-                continue;
-            }
-
-            // get parent directory
-            const parentDirectory = ffs.find((f) => f.name === cd.parent && f.type === 'directory');
-            cd = parentDirectory;
-
-            i++;
-            continue;
-        }
-
-        if (command.startsWith('cd ')) {
-            const directoryName = command.replace('cd ', '').trim();
-            const directory = cd.children.find((f) => f.name === directoryName && f.type === 'directory');
-            if (directory) {
-                cd = directory;
-            }
-            i++;
-            continue;
-        }
-
-        if (command === 'ls') {
-            // look ahead in the lines and get non-command lines
-            const files = [];
-            for (let j = i + 1; j < lines.length; j++) {
-                const nextLine = lines[j];
-                if (nextLine.startsWith('$')) {
-                    break;
-                }
-                files.push(nextLine);
-            }
-
-            // add files to the current directory
-            for (let j = 0; j < files.length; j++) {
-                const file = files[j];
-                // if file starts with 'dir' it's a directory
-                if (file.startsWith('dir')) {
-                    const directoryName = file.replace('dir ', '').trim();
-                    const directory = {
-                        name: directoryName,
-                        type: 'directory',
-                        children: [],
-                        childrenNames: [],
-                        parent: cd.name,
-                    };
-                    cd.children.push(directory);
-                    cd.childrenNames.push(directoryName);
-                    ffs.push(directory);
-                } else {
-                    // file size space file name
-                    const [size, fileName] = file.split(' ');
-                    const fileRecord = {
-                        name: fileName,
-                        type: 'file',
-                        size: parseInt(size),
-                        parent: cd.name,
-                    };
-                    cd.children.push(fileRecord);
-                    cd.childrenNames.push(fileName);
-                    ffs.push(fileRecord);
-                }
-            }
-
-            // increment i to skip the files
-            i += files.length + 1;
-        }
-    }
-}
-
-// traverse through mfs recursively and calculate the total size of each directory
-function calculateDirectorySize(directory) {
-    let totalSize = 0;
-    for (let i = 0; i < directory.children.length; i++) {
-        const child = directory.children[i];
-        if (child.type === 'file') {
-            totalSize += child.size;
+        } else if (directory === '..') {
+            cd = cd.parent;
         } else {
-            totalSize += calculateDirectorySize(child);
+            const child = cd.children.find((child) => child.name === directory);
+            if (child) {
+                cd = child;
+            }
         }
     }
 
-    if (!directory.size) {
-        directory.size = totalSize;
+    // if line equals '$ ls' skip it
+    if (line === '$ ls') {
+        return;
     }
-    return totalSize;
-}
 
-// calculate the total size of each directory
-ffs.forEach((f) => {
-    if (f.type === 'directory') {
-        calculateDirectorySize(f);
+    // if line starts with an integer, it is a file
+    // add file to current directory
+    if (line.match(/^\d/)) {
+        const [size, name] = line.split(' ');
+        cd.localSize += Number(size);
+        cd.children.push({ name, size: Number(size), parent: cd });
+    }
+
+    // if line starts with 'dir' it is a directory
+    // add directory to current directory
+    if (line.match(/^dir/)) {
+        const [_, name] = line.split(' ');
+        const newDir = { name, children: [], parent: cd, localSize: 0, size: 0 };
+        cd.children.push(newDir);
+        ffs.push(newDir);
     }
 });
 
-// find directories with size <= 100000
-const directories = ffs.filter((f) => f.type === 'directory' && f.size <= 100000);
-// directories.forEach((d) => console.log(d.name, d.size, d.children.map((f) => f.type === 'directory' ? f.name : '').join(', ')));
+// recursively calculate the size of each directory including descendants
+// directory size is the sum of the local size and the size of all descendants
+function calculateSize(directory) {
+    directory.children.forEach((child) => {
+        if (child.children) {
+            calculateSize(child);
+        }
+    });
+    directory.size += directory.children.reduce((sum, child) => sum + child.size, 0);
+}
+
+// calculate the size of each directory including descendants
+calculateSize(rootDirectory);
+
+// recursively print the directory and file structure
+function printDirectory(directory, indent = 0) {
+    const { name, children, localSize } = directory;
+    console.log(' '.repeat(indent) + name + (directory.localSize ? ` (dir size: ${directory.size})` : ''));
+    children.forEach((child) => {
+        if (child.children) {
+            printDirectory(child, indent + 2);
+        } else {
+            console.log(' '.repeat(indent + 2) + child.name + (child.size ? ` (file size: ${child.size})` : ''));
+        }
+    });
+}
+
+// print the directory and file structure
+printDirectory(rootDirectory);
+
+// get all directories with size not exceeding 100000
+const smallDirectories = ffs.filter((directory) => directory.size <= 100000 && Boolean(directory.children));
+console.log(smallDirectories.map((directory) => directory.name));
+
+// sum the size of all directories in smallDirectories
+const smallDirectoriesSize = smallDirectories.reduce((sum, directory) => sum + directory.size, 0);
+console.log(smallDirectoriesSize);
+
+// total disk space is 70000000
+// get available disk space by subtracting the size of root directory from total disk space
+const availableDiskSpace = 70000000 - rootDirectory.size;
+console.log(`availableDiskSpace: ${availableDiskSpace}`);
+// required disk space is 30000000
+// get minimum disk space to be freed by subtracting available disk space from required disk space
+const minimumDiskSpaceToBeFreed = 30000000 - availableDiskSpace;
+console.log(`minimumDiskSpaceToBeFreed: ${minimumDiskSpaceToBeFreed}`);
 
 
-// sum the sizes of the directories
-const totalSize = directories.reduce((acc, curr) => acc + curr.size, 0);
-console.log(totalSize);
+// get all directories with size exceeding minimumDiskSpaceToBeFreed
+const largeDirectories = ffs.filter((directory) => directory.size > minimumDiskSpaceToBeFreed && Boolean(directory.children));
 
+// sort directories by size
+largeDirectories.sort((a, b) => b.size - a.size);
 
-// find and log directory mpq
-const mpq = ffs.find((f) => f.name === 'mpq' && f.type === 'directory');
-console.log(mpq);
+console.log(largeDirectories.map((directory) => `${directory.name} (size: ${directory.size})`))
