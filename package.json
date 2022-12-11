@@ -16,5 +16,8 @@
   "bugs": {
     "url": "https://github.com/markibanez/advent-of-code-2022/issues"
   },
-  "homepage": "https://github.com/markibanez/advent-of-code-2022#readme"
+  "homepage": "https://github.com/markibanez/advent-of-code-2022#readme",
+  "dependencies": {
+    "mathjs": "^11.5.0"
+  }
 }
